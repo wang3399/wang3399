@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        success: '#34D399',
+                        warning: '#FBBF24',
+                        danger: '#F87171',
+                        idle: '#E5E7EB',
+                        card: '#FFFFFF',
+                        page: '#F9FAFB'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background:
+                radial-gradient(circle at 85% 90%, #ffd6e0 0%, transparent 50%),
+                radial-gradient(circle at 15% 82%, #d6f5f0 0%, transparent 48%),
+                radial-gradient(circle at 80% 12%, #e8e4ff 0%, transparent 50%),
+                radial-gradient(circle at 20% 18%, #fff2cc 0%, transparent 45%),
+                linear-gradient(135deg, #f7faff 0%, #fff7fb 100%);
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+
+        /* 背景参考线 */
+        .grid-guide {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background-size: 20px 20px;
+            background-image:
+                linear-gradient(to right, rgba(200, 180, 220, 0.06) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(200, 180, 220, 0.06) 1px, transparent 1px);
+            z-index: 0;
+        }
+
+        .table-card {
+            transition: box-shadow 0.25s ease, transform 0.2s ease;
+            cursor: grab;
+            width: 130px;
+            padding: 10px;
+        }
+        .table-card.locked-mode{
+            cursor: default !important;
+        }
+
+        .table-card:active {
+            cursor: grabbing;
+        }
+
+        .table-idle {
+            opacity: 0.55;
+        }
+
+        .table-idle:hover {
+            opacity: 0.95;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .table-active:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .table-card.dragging {
+            z-index: 999;
+            transform: scale(1.05);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.15);
+        }
+
+        @keyframes blinkWarn {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.65; }
+        }
+
+        .blink-warning {
+            animation: blinkWarn 1s infinite;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-2px); }
+            75% { transform: translateX(2px); }
+        }
+
+        .shake-alert {
+            animation: shake 1.5s infinite ease-in-out;
+        }
+
+        .modal-mask {
+            background: rgba(0, 0, 0, 0.45);
+        }
+
+        /* 右侧悬浮容器组 */
+        .float-right-group {
+            position: fixed;
+            top: 90px;
+            right: 24px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        .legend-panel{
+            background: rgba(255,255,255,0.92);
+            padding: 12px 16px;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+            font-size: 13px;
+            min-width: 180px;
+        }
+        .float-btn{
+            padding: 9px 14px;
+            font-size: 13px;
+            border-radius: 999px;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-6 font-sans text-gray-700">
+
+<!-- 文件选择隐藏输入框 -->
+<input type="file" id="fileLoader" accept=".json" class="hidden">
+
+<!-- 右侧悬浮区域：图例 + 按钮组 -->
+<div class="float-right-group">
+    <div class="legend-panel">
+        <div class="font-semibold mb-2">图例说明</div>
+        <div class="space-y-1.5" id="legendCountWrap">
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="inline-block w-4 h-4 rounded bg-idle border"></span>
+                    <span>空闲桌台</span>
+                </div>
+                <span id="cntIdle">0</span>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="inline-block w-4 h-4 rounded bg-primary"></span>
+                    <span>正常计时</span>
+                </div>
+                <span id="cntNormal">0</span>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="inline-block w-4 h-4 rounded bg-warning"></span>
+                    <span>时长不足10分钟</span>
+                </div>
+                <span id="cntWarning">0</span>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="inline-block w-4 h-4 rounded bg-purple-300"></span>
+                    <span>不限时</span>
+                </div>
+                <span id="cntUnlimit">0</span>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="inline-block w-4 h-4 rounded bg-danger"></span>
+                    <span>已超时</span>
+                </div>
+                <span id="cntOver">0</span>
+            </div>
+        </div>
+    </div>
+
+    <button onclick="toggleLockLayout()" id="lockBtn" class="float-btn bg-slate-600 text-white hover:bg-slate-700 transition font-bold shadow-lg">
+        <i class="fa fa-lock mr-1"></i> 锁定布局
+    </button>
+    <button onclick="addNewSeat()" class="float-btn bg-emerald-500 text-white hover:bg-emerald-600 transition font-bold shadow-lg">
+        <i class="fa fa-plus mr-1"></i> 新增座位
+    </button>
+    <button onclick="openBatchDeleteModal()" class="float-btn bg-orange-500 text-white hover:bg-orange-600 transition font-bold shadow-lg">
+        <i class="fa fa-trash mr-1"></i> 批量删除座位
+    </button>
+    <div class="flex gap-2">
+        <button onclick="saveLayout()" class="float-btn bg-blue-500 text-white hover:bg-blue-600 transition font-bold shadow-lg">
+            <i class="fa fa-save mr-1"></i> 保存布局
+        </button>
+        <button onclick="triggerLoadFile()" class="float-btn bg-sky-500 text-white hover:bg-sky-600 transition font-bold shadow-lg">
+            <i class="fa fa-folder-open mr-1"></i> 载入布局
+        </button>
+    </div>
+</div>
+
+<div class="max-w-[1700px] mx-auto relative">
+    <div class="fixed inset-0 opacity-18 pointer-events-none" style="background-image: url('data:image/svg+xml,%3Csvg width=\"60\" height=\"60\" viewBox=\"0 0 60 60\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cg fill=\"none\" fill-rule=\"evenodd\"%3E%3Cg fill=\"%23b8a8c8\" fill-opacity=\"0.10\"%3E%3Cpath d=\"M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E');"></div>
+
+    <header class="bg-card rounded-2xl shadow-sm p-5 mb-6 border border-gray-200 flex flex-wrap justify-between items-center gap-4 relative z-20">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">拼豆店桌台计时管理 <span class="text-sm text-gray-400">【长按拖动座位摆放位置】</span></h1>
+            <p class="text-gray-500 mt-1 text-sm">双击桌台开台｜时长不足10分钟自动弹窗提醒</p>
+        </div>
+        <div class="flex gap-3 flex-wrap">
+            <button onclick="openCloseShopConfirm()" class="px-5 py-2.5 bg-red-500 text-white rounded-xl hover:bg-red-600 transition text-sm font-bold shadow">
+                <i class="fa fa-power-off"></i> 打烊
+            </button>
+        </div>
+    </header>
+
+    <div id="boardWrap" class="relative min-h-[650px] z-10">
+        <div class="grid-guide"></div>
+    </div>
+</div>
+
+<!-- 批量删除弹窗 -->
+<div id="batchDeleteModal" class="fixed inset-0 modal-mask hidden flex items-center justify-center z-50" onclick="closeBatchDeleteModal()">
+    <div class="bg-card rounded-2xl p-6 shadow-xl w-[360px] border border-gray-200" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-bold mb-4 text-center">批量删除座位（仅空闲座位可删除，至少保留1个）</h3>
+        <div id="checkList" class="max-h-60 overflow-y-auto space-y-2 mb-5">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <button onclick="confirmBatchDelete()" class="py-2.5 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600">确认删除选中</button>
+            <button onclick="closeBatchDeleteModal()" class="py-2.5 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 border border-gray-300">取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- 开台弹窗 -->
+<div id="openModal" class="fixed inset-0 modal-mask hidden flex items-center justify-center z-50" onclick="closeModal()">
+    <div class="bg-card rounded-2xl p-6 shadow-xl w-[320px] border border-gray-200" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-bold mb-4 text-center" id="modalTitle">开启桌台</h3>
+        <div class="mb-4">
+            <p class="font-medium mb-2 text-sm">选择桌型</p>
+            <div class="flex gap-3">
+                <label class="flex-1 border border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:bg-gray-50 text-sm">
+                    <input type="radio" name="deskType" value="single" checked class="mr-1"> 单人桌
+                </label>
+                <label class="flex-1 border border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:bg-gray-50 text-sm">
+                    <input type="radio" name="deskType" value="double" class="mr-1"> 双人桌
+                </label>
+            </div>
+        </div>
+        <div class="mb-5">
+            <p class="font-medium mb-2 text-sm">选择时长</p>
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="selectTime(1)" class="w-full py-2.5 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 border border-gray-300 text-sm">1 小时</button>
+                <button onclick="selectTime(2)" class="w-full py-2.5 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 border border-gray-300 text-sm">2 小时</button>
+                <button onclick="selectTime(3)" class="w-full py-2.5 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 border border-gray-300 text-sm">3 小时</button>
+                <button onclick="selectTime(0)" class="w-full py-2.5 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 border border-gray-300 text-sm">不限时</button>
+            </div>
+        </div>
+        <button onclick="closeModal()" class="w-full py-2.5 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 border border-gray-300 text-sm">取消</button>
+    </div>
+</div>
+
+<!-- 追加时长弹窗 -->
+<div id="addTimeModal" class="fixed inset-0 modal-mask hidden flex items-center justify-center z-50" onclick="closeAddTimeModal()">
+    <div class="bg-card rounded-2xl p-6 shadow-xl w-[320px] border border-gray-200" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-bold mb-4 text-center" id="addTimeModalTitle">追加时长</h3>
+        <div class="grid grid-cols-2 gap-3 mb-5">
+            <button onclick="addSelectTime(1)" class="w-full py-2.5 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 border border-blue-600">+1 小时</button>
+            <button onclick="addSelectTime(2)" class="w-full py-2.5 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 border border-blue-600">+2 小时</button>
+            <button onclick="addSelectTime(3)" class="w-full py-2.5 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 border border-blue-600">+3 小时</button>
+            <button onclick="addSelectTime(0)" class="w-full py-2.5 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 border border-gray-300">改为不限时</button>
+        </div>
+        <button onclick="closeAddTimeModal()" class="w-full py-2.5 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 border border-gray-300">取消</button>
+    </div>
+</div>
+
+<!-- 时长不足警告弹窗 -->
+<div id="warnModal" class="fixed inset-0 modal-mask hidden flex items-center justify-center z-[60]" onclick="closeWarnModal()">
+    <div class="bg-card rounded-2xl p-8 shadow-2xl w-[360px] border-2 border-warning relative" onclick="event.stopPropagation()">
+        <button onclick="closeWarnModal()" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        <h3 class="text-xl font-bold text-center text-orange-600 mb-2">拼豆时长不足啦~</h3>
+        <div class="text-center my-6">
+            <span id="warnTableNo" class="text-4xl font-bold text-red-500"></span>
+        </div>
+        <div class="flex gap-3">
+            <button onclick="warnAddTime()" class="flex-1 py-2.5 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600">追加时长</button>
+            <button onclick="closeWarnModal()" class="flex-1 py-2.5 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 border border-gray-300">知道了</button>
+        </div>
+    </div>
+</div>
+
+<!-- 打烊二次确认弹窗 -->
+<div id="closeShopConfirmModal" class="fixed inset-0 modal-mask hidden flex items-center justify-center z-[70]" onclick="closeCloseShopModal()">
+    <div class="bg-card rounded-2xl p-8 shadow-2xl w-[340px] border-2 border-red-300" onclick="event.stopPropagation()">
+        <h3 class="text-xl font-bold text-center text-red-500 mb-4">确认打烊？</h3>
+        <p class="text-center text-gray-600 mb-6">打烊将会清空所有桌台订单，全部恢复空闲，无法撤销！</p>
+        <div class="flex gap-3">
+            <button onclick="confirmCloseShop()" class="flex-1 py-2.5 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600">确认打烊</button>
+            <button onclick="closeCloseShopModal()" class="flex-1 py-2.5 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 border border-gray-300">取消</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const STORAGE_KEY = 'beanTableData';
+    const GRID_SIZE = 20;
+    const SNAP_RANGE = 12;
+    let tableData = [];
+    let currentEditTableId = null;
+    let warnTableId = null;
+    let triggeredWarnSet = new Set();
+    let timer;
+    // 布局锁定状态
+    let layoutLocked = false;
+
+    let dragEl = null;
+    let dragId = null;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    function saveToLocal() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tableData));
+    }
+
+    // 切换布局锁定/解锁
+    function toggleLockLayout(){
+        layoutLocked = !layoutLocked;
+        const btn = document.getElementById('lockBtn');
+        if(layoutLocked){
+            btn.innerHTML = `<i class="fa fa-unlock mr-1"></i> 解锁布局`;
+            btn.className = 'float-btn bg-amber-500 text-white hover:bg-amber-600 transition font-bold shadow-lg';
+            alert('布局已锁定，禁止拖动座位！计时功能正常使用。');
+        }else{
+            btn.innerHTML = `<i class="fa fa-lock mr-1"></i> 锁定布局`;
+            btn.className = 'float-btn bg-slate-600 text-white hover:bg-slate-700 transition font-bold shadow-lg';
+            alert('布局已解锁，可以自由拖动调整座位。');
+        }
+    }
+
+    // 更新右侧图例数量统计
+    function updateCountStats() {
+        let idle = 0, normal = 0, warning = 0, over = 0, unlimit = 0;
+        tableData.forEach(item => {
+            if (item.status === 'idle') {
+                idle++;
+            } else if (item.unlimited) {
+                unlimit++;
+            } else {
+                if (item.remainSec <= 0) {
+                    over++;
+                } else if (item.remainSec <= 600) {
+                    warning++;
+                } else {
+                    normal++;
+                }
+            }
+        });
+        document.getElementById('cntIdle').textContent = idle;
+        document.getElementById('cntNormal').textContent = normal;
+        document.getElementById('cntWarning').textContent = warning;
+        document.getElementById('cntOver').textContent = over;
+        document.getElementById('cntUnlimit').textContent = unlimit;
+    }
+
+    function initTables() {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+            tableData = JSON.parse(saved);
+        } else {
+            tableData = [
+                {
+                    id: 1,
+                    name: 'A01',
+                    status: 'idle',
+                    deskType: 'single',
+                    unlimited: false,
+                    remainSec: 0,
+                    x: 40,
+                    y: 40
+                }
+            ];
+            saveToLocal();
+        }
+        renderTables();
+        startGlobalTimer();
+        updateCountStats();
+    }
+
+    function addNewSeat() {
+        const maxId = tableData.reduce((m, item) => Math.max(m, item.id), 0);
+        const newId = maxId + 1;
+        const seatName = 'A' + String(newId).padStart(2, '0');
+        const last = tableData[tableData.length - 1];
+        const newX = last ? last.x + 140 : 40;
+        const newY = last ? last.y : 40;
+        const newItem = {
+            id: newId,
+            name: seatName,
+            status: 'idle',
+            deskType: 'single',
+            unlimited: false,
+            remainSec: 0,
+            x: snap(newX),
+            y: snap(newY)
+        };
+        tableData.push(newItem);
+        saveToLocal();
+        renderTables();
+        updateCountStats();
+    }
+
+    function snap(value) {
+        return Math.round(value / GRID_SIZE) * GRID_SIZE;
+    }
+
+    // 保存布局：直接下载json文件
+    function saveLayout() {
+        const json = JSON.stringify(tableData, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '座位布局.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    // 载入布局：唤起文件选择
+    function triggerLoadFile() {
+        document.getElementById('fileLoader').value = '';
+        document.getElementById('fileLoader').click();
+    }
+    document.getElementById('fileLoader').onchange = function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            try {
+                const arr = JSON.parse(ev.target.result);
+                if (!Array.isArray(arr)) throw new Error();
+                tableData = arr;
+                saveToLocal();
+                renderTables();
+                updateCountStats();
+                alert('布局载入成功！');
+            } catch (err) {
+                alert('文件格式错误，请选择正确的布局json文件！');
+            }
+        };
+        reader.readAsText(file);
+    };
+
+    function openBatchDeleteModal() {
+        // 锁定布局时禁止打开删除弹窗
+        if(layoutLocked){
+            alert('当前布局已锁定，禁止删除座位！请先解锁布局。');
+            return;
+        }
+        const wrap = document.getElementById('checkList');
+        wrap.innerHTML = '';
+        tableData.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'flex items-center gap-2';
+            // 已开台座位禁用复选框
+            const isBusy = item.status !== 'idle';
+            div.innerHTML = `
+                <input type="checkbox" class="seat-check" value="${item.id}" id="ck${item.id}" ${isBusy ? 'disabled' : ''}>
+                <label for="ck${item.id}" class="${isBusy ? 'text-gray-400' : ''}">${item.name} ${isBusy ? '(使用中不可删除)' : ''}</label>
+            `;
+            wrap.appendChild(div);
+        });
+        document.getElementById('batchDeleteModal').classList.remove('hidden');
+    }
+    function closeBatchDeleteModal() {
+        document.getElementById('batchDeleteModal').classList.add('hidden');
+    }
+    function confirmBatchDelete() {
+        const checks = document.querySelectorAll('.seat-check:checked');
+        const delIds = Array.from(checks).map(c => Number(c.value));
+        if (delIds.length === 0) {
+            alert('请至少勾选一个空闲座位！');
+            return;
+        }
+        if (tableData.length - delIds.length < 1) {
+            alert('不能全部删除，至少保留一个座位！');
+            return;
+        }
+        tableData = tableData.filter(d => !delIds.includes(d.id));
+        delIds.forEach(id => triggeredWarnSet.delete(id));
+        saveToLocal();
+        renderTables();
+        updateCountStats();
+        closeBatchDeleteModal();
+    }
+
+    function renderTables() {
+        const wrap = document.getElementById('boardWrap');
+        wrap.innerHTML = '';
+        tableData.forEach(t => {
+            let cls = 'table-card absolute rounded-xl p-2.5 shadow-sm border ';
+            if(layoutLocked) cls += ' locked-mode';
+            let infoText = '';
+            let typeLabel = t.deskType === 'single' ? '单人' : '双人';
+            let isNeedShake = triggeredWarnSet.has(t.id);
+            if (t.status === 'idle') {
+                cls += 'bg-idle table-idle border-gray-300';
+                infoText = '空闲<br/><span class="text-xs text-gray-500">双击开台</span>';
+            } else {
+                cls += 'bg-card border-gray-200';
+                if (t.unlimited) {
+                    cls += ' bg-purple-50 border-purple-200';
+                    infoText = `${typeLabel}<br/><span class="text-purple-600 font-medium">不限时</span>`;
+                } else {
+                    const m = Math.floor(t.remainSec / 60);
+                    const s = t.remainSec % 60;
+                    infoText = `${typeLabel}<br/>剩余 <span class="font-medium">${m}分${s.toString().padStart(2, '0')}秒</span>`;
+                    if (t.remainSec <= 0) {
+                        cls += ' bg-red-50 border-red-200';
+                    } else if (t.remainSec < 10 * 60) {
+                        cls += ' bg-yellow-50 border-yellow-200 blink-warning';
+                        if (isNeedShake) cls += ' shake-alert';
+                    } else {
+                        cls += ' bg-blue-50 border-blue-200';
+                    }
+                }
+            }
+            const div = document.createElement('div');
+            div.className = cls;
+            div.style.left = t.x + 'px';
+            div.style.top = t.y + 'px';
+            div.dataset.tid = t.id;
+            let buttonHtml = '';
+            if (t.status === 'working') {
+                if (t.unlimited) {
+                    buttonHtml = `
+                    <div class="mt-2">
+                        <button onclick="event.stopPropagation();endTable(${t.id})" class="w-full py-2 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 border border-gray-300 text-xs">结束订单</button>
+                    </div>
+                    `;
+                } else {
+                    buttonHtml = `
+                    <div class="mt-2 grid grid-cols-2 gap-1.5">
+                        <button onclick="event.stopPropagation();endTable(${t.id})" class="py-2 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 border border-gray-300 text-xs">结束订单</button>
+                        <button onclick="event.stopPropagation();openAddTimeModal(${t.id})" class="py-2 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 text-xs">追加时长</button>
+                    </div>
+                    `;
+                }
+            } else {
+                buttonHtml = `<div class="mt-2 h-[38px]"></div>`;
+            }
+            div.innerHTML = `
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-bold text-base">${t.name}</span>
+                </div>
+                <div class="text-center text-gray-700 text-xs leading-relaxed">
+                    ${infoText}
+                </div>
+                ${buttonHtml}
+            `;
+            div.onmousedown = (e) => {
+                if(layoutLocked) return;
+                if (e.target.tagName === 'BUTTON') return;
+                dragEl = div;
+                dragId = t.id;
+                dragEl.classList.add('dragging');
+                const rect = div.getBoundingClientRect();
+                offsetX = e.clientX - rect.left;
+                offsetY = e.clientY - rect.top;
+                e.preventDefault();
+            };
+            div.ondblclick = (e) => {
+                if (e.target.tagName === 'BUTTON') return;
+                if (t.status === 'idle') openSelectModal(t.id);
+            };
+            wrap.appendChild(div);
+        });
+        wrap.insertAdjacentHTML('afterbegin', '<div class="grid-guide"></div>');
+    }
+
+    document.addEventListener('mousemove', (e) => {
+        if (!dragEl) return;
+        const wrap = document.getElementById('boardWrap');
+        const wrapRect = wrap.getBoundingClientRect();
+        let nx = e.clientX - wrapRect.left - offsetX;
+        let ny = e.clientY - wrapRect.top - offsetY;
+        nx = Math.max(0, nx);
+        ny = Math.max(0, ny);
+        const dx = Math.abs(nx - snap(nx));
+        const dy = Math.abs(ny - snap(ny));
+        if (dx <= SNAP_RANGE) nx = snap(nx);
+        if (dy <= SNAP_RANGE) ny = snap(ny);
+        dragEl.style.left = nx + 'px';
+        dragEl.style.top = ny + 'px';
+        const item = tableData.find(d => d.id === dragId);
+        if (item) {
+            item.x = nx;
+            item.y = ny;
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (dragEl) {
+            dragEl.classList.remove('dragging');
+            saveToLocal();
+        }
+        dragEl = null;
+        dragId = null;
+    });
+
+    function openSelectModal(tableId) {
+        currentEditTableId = tableId;
+        const table = tableData.find(x => x.id === tableId);
+        document.getElementById('modalTitle').innerText = `开启【${table.name}】`;
+        document.getElementById('openModal').classList.remove('hidden');
+    }
+    function closeModal() {
+        document.getElementById('openModal').classList.add('hidden');
+        currentEditTableId = null;
+    }
+    function selectTime(hour) {
+        const tid = currentEditTableId;
+        const table = tableData.find(x => x.id === tid);
+        const typeVal = document.querySelector('input[name="deskType"]:checked').value;
+        table.deskType = typeVal;
+        table.status = 'working';
+        triggeredWarnSet.delete(tid);
+        if (hour === 0) {
+            table.unlimited = true;
+            table.remainSec = 0;
+        } else {
+            table.unlimited = false;
+            table.remainSec = hour * 3600;
+        }
+        closeModal();
+        saveToLocal();
+        renderTables();
+        updateCountStats();
+    }
+    function openAddTimeModal(tableId) {
+        currentEditTableId = tableId;
+        const table = tableData.find(x => x.id === tableId);
+        document.getElementById('addTimeModalTitle').innerText = `【${table.name}】追加时长`;
+        document.getElementById('addTimeModal').classList.remove('hidden');
+    }
+    function closeAddTimeModal() {
+        document.getElementById('addTimeModal').classList.add('hidden');
+    }
+    function addSelectTime(hour) {
+        const tid = currentEditTableId;
+        const table = tableData.find(x => x.id === tid);
+        triggeredWarnSet.delete(tid);
+        if (hour === 0) {
+            table.unlimited = true;
+            table.remainSec = 0;
+        } else {
+            table.unlimited = false;
+            table.remainSec += hour * 3600;
+        }
+        closeAddTimeModal();
+        saveToLocal();
+        renderTables();
+        updateCountStats();
+    }
+    function openWarnModal(tableId) {
+        warnTableId = tableId;
+        const table = tableData.find(x => x.id === tableId);
+        document.getElementById('warnTableNo').innerText = table.name;
+        document.getElementById('warnModal').classList.remove('hidden');
+    }
+    function closeWarnModal() {
+        document.getElementById('warnModal').classList.add('hidden');
+    }
+    function warnAddTime() {
+        closeWarnModal();
+        openAddTimeModal(warnTableId);
+    }
+    function endTable(id) {
+        const t = tableData.find(x => x.id === id);
+        t.status = 'idle';
+        t.unlimited = false;
+        t.remainSec = 0;
+        triggeredWarnSet.delete(id);
+        saveToLocal();
+        renderTables();
+        updateCountStats();
+    }
+    function startGlobalTimer() {
+        timer = setInterval(() => {
+            let change = false;
+            tableData.forEach(t => {
+                if (t.status === 'working' && !t.unlimited && t.remainSec > 0) {
+                    t.remainSec--;
+                    change = true;
+                    if (t.remainSec <= 600 && !triggeredWarnSet.has(t.id)) {
+                        triggeredWarnSet.add(t.id);
+                        openWarnModal(t.id);
+                    }
+                }
+            });
+            if (change) {
+                saveToLocal();
+                renderTables();
+                updateCountStats();
+            }
+        }, 1000);
+    }
+    function openCloseShopConfirm() {
+        document.getElementById('closeShopConfirmModal').classList.remove('hidden');
+    }
+    function closeCloseShopModal() {
+        document.getElementById('closeShopConfirmModal').classList.add('hidden');
+    }
+    function confirmCloseShop() {
+        tableData.forEach(t => {
+            t.status = 'idle';
+            t.unlimited = false;
+            t.remainSec = 0;
+        });
+        triggeredWarnSet.clear();
+        saveToLocal();
+        closeCloseShopModal();
+        renderTables();
+        updateCountStats();
+    }
+    window.onload = initTables;
+</script>
+</body>
+</html>
